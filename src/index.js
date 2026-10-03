@@ -37,7 +37,11 @@ async function decide(request, env) {
   if (!v.ok) return json({ error: "bad_request" }, 400);
 
   // 제한 확인 — 허용이면 DO가 같은 호출 안에서 카운터를 올린다(원자적)
-  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  // IP는 그대로 저장하지 않는다 — 하루 단위 소금을 섞은 SHA-256 앞 16자로만 센다(그날 카운터에만 쓰이고 다음 날 지워짐)
+  const rawIp = request.headers.get("CF-Connecting-IP") || "unknown";
+  const salt = `${env.IP_SALT || "seliq-sense"}:${Math.floor(Date.now() / 86_400_000)}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${rawIp}`));
+  const ip = [...new Uint8Array(digest)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
   const stub = env.LIMITER.get(env.LIMITER.idFromName("global"));
   const verdict = await stub.check(v.value.device_id, ip, Date.now());
   if (!verdict.allow) {
