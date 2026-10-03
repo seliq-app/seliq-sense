@@ -2,6 +2,10 @@ name = "seliq-sense"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
+# Jev(TypeSafe) 서버 가까이에서 실행해 왕복을 줄인다
+[placement]
+mode = "smart"
+
 # 비밀값(TYPESAFE_API_KEY)은 여기에 쓰지 않는다 — Cloudflare 대시보드 Secret으로만 설정.
 
 [[durable_objects.bindings]]

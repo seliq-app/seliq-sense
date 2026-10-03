@@ -42,23 +42,22 @@ async function decide(request, env) {
   const salt = `${env.IP_SALT || "seliq-sense"}:${Math.floor(Date.now() / 86_400_000)}`;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${rawIp}`));
   const ip = [...new Uint8Array(digest)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+  // 지연을 줄이려고 한도 확인과 Jev 호출을 동시에 시작한다. 한도에 걸리면 Jev 결과는 버리고 429.
+  // (한도에 걸린 요청도 Jev 한 번은 쓰일 수 있다 — 요청당 ≈$0.00004라 감수)
   const stub = env.LIMITER.get(env.LIMITER.idFromName("global"));
-  const verdict = await stub.check(v.value.device_id, ip, Date.now());
+  const verdictP = stub.check(v.value.device_id, ip, Date.now());
+  const upstreamP = fetch(UPSTREAM, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.TYPESAFE_API_KEY}` },
+    body: JSON.stringify(v.value.upstream),
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  }).catch(() => null);
+  const verdict = await verdictP;
   if (!verdict.allow) {
     return json({ error: "rate_limited" }, 429, { "Retry-After": String(verdict.retryAfter) });
   }
-
-  let res;
-  try {
-    res = await fetch(UPSTREAM, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.TYPESAFE_API_KEY}` },
-      body: JSON.stringify(v.value.upstream),
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    });
-  } catch {
-    return json({ error: "upstream" }, 502);
-  }
+  const res = await upstreamP;
+  if (!res) return json({ error: "upstream" }, 502);
   // 원인 파악용으로 TypeSafe 응답 코드만 알려 준다(401 = 키 문제, 429 = TypeSafe 한도, 4xx = 요청 형식). 본문·키는 담지 않는다.
   if (!res.ok) return json({ error: "upstream", upstream_status: res.status }, 502);
 
