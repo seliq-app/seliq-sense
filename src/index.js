@@ -59,7 +59,8 @@ async function decide(request, env) {
   } catch {
     return json({ error: "upstream" }, 502);
   }
-  if (!res.ok) return json({ error: "upstream" }, 502);
+  // 원인 파악용으로 TypeSafe 응답 코드만 알려 준다(401 = 키 문제, 429 = TypeSafe 한도, 4xx = 요청 형식). 본문·키는 담지 않는다.
+  if (!res.ok) return json({ error: "upstream", upstream_status: res.status }, 502);
 
   let data;
   try {
